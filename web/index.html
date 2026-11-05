@@ -1,0 +1,55 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Delhi 3D: pilot</title>
+<link href="https://unpkg.com/maplibre-gl@5/dist/maplibre-gl.css" rel="stylesheet">
+<script src="https://unpkg.com/maplibre-gl@5/dist/maplibre-gl.js"></script>
+<style>html, body, #map { margin: 0; height: 100%; }</style>
+</head>
+<body>
+<div id="map"></div>
+<script>
+const map = new maplibregl.Map({
+  container: 'map',
+  style: 'https://tiles.openfreemap.org/styles/positron', // free basemap, no API key
+  center: [77.2167, 28.6315],   // Connaught Place
+  zoom: 15.5,
+  pitch: 60,                    // tilt the camera so you see height
+  bearing: -20,
+  attributionControl: { customAttribution: 'Buildings & heights: Google Open Buildings (CC BY 4.0)' },
+});
+map.addControl(new maplibregl.NavigationControl());
+
+map.on('load', () => {
+  map.addSource('buildings', { type: 'geojson', data: '../data/pilot_cp.geojson' });
+
+  map.addLayer({
+    id: 'buildings-3d',
+    type: 'fill-extrusion',
+    source: 'buildings',
+    paint: {
+      'fill-extrusion-height': ['get', 'height_m'],   // push each footprint up by its height
+      'fill-extrusion-base': 0,
+      'fill-extrusion-color': ['case',
+        ['==', ['get', 'height_estimated'], true], '#c9ced6',   // guessed heights in grey
+        ['interpolate', ['linear'], ['get', 'height_m'],
+          0, '#2c4a6e', 10, '#3f8fb0', 25, '#7fd1b9', 50, '#f5a524']],
+      'fill-extrusion-opacity': 0.9
+    }
+  });
+
+  // Click a building to see its height
+  map.on('click', 'buildings-3d', (e) => {
+    const p = e.features[0].properties;
+    const est = p.height_estimated === true || p.height_estimated === 'true';
+    new maplibregl.Popup()
+      .setLngLat(e.lngLat)
+      .setHTML(`${Number(p.height_m).toFixed(1)} m${est ? ' (estimated)' : ''}`)
+      .addTo(map);
+  });
+});
+</script>
+</body>
+</html>
