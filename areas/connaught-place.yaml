@@ -1,0 +1,20 @@
+# One file per area. Only name and bbox are required; everything else has defaults.
+name: connaught-place                 # lowercase letters, digits and dashes only
+title: Connaught Place, New Delhi
+bbox: [77.205, 28.622, 77.228, 28.641]   # min_lon, min_lat, max_lon, max_lat
+origin: [77.2167, 28.6315]               # optional; defaults to the bbox centre
+earth_engine_project: isovia-delhi3d
+
+buildings:
+  source: open_buildings              # Africa, South/Southeast Asia, Latin America, Caribbean
+  min_confidence: 0.75
+  tower_height_m: 30
+  mid_height_m: 10
+  min_measured_height_m: 2.5          # below this, height counts as a guess
+  default_height_m: 3.0               # what guessed buildings get
+
+trees:
+  street_spacing_m: 15
+  park_m2_per_tree: 250
+  open_m2_per_tree: 500
+  seed: 42

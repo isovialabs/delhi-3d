@@ -1,0 +1,42 @@
+{
+  "area": "chandni-chowk",
+  "title": "Chandni Chowk, Old Delhi",
+  "generated": "2026-11-05",
+  "bbox": [
+    77.219,
+    28.647,
+    77.242,
+    28.666
+  ],
+  "projection": "EPSG:32643",
+  "area_km2": 4.737,
+  "buildings": {
+    "count": 8706,
+    "per_km2": 1838,
+    "by_type": {
+      "low": 6846,
+      "estimated": 553,
+      "mid": 1304,
+      "tower": 3
+    },
+    "measured_height_share": 0.936,
+    "height_m": {
+      "median": 7.5,
+      "p90": 10.9,
+      "max": 37.9
+    },
+    "footprint_coverage": 0.194
+  },
+  "ground": {
+    "road_share": 0.143,
+    "green_share": 0.055
+  },
+  "trees": {
+    "count": 9500,
+    "per_km2": 2006
+  },
+  "sources": {
+    "buildings": "Google Open Buildings v3 + 2.5D Temporal (CC BY 4.0)",
+    "ground": "OpenStreetMap contributors (ODbL)"
+  }
+}

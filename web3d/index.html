@@ -3,7 +3,7 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<title>Delhi 3D: city view</title>
+<title>Isovia Labs 3D</title>
 <style>
   html, body { margin: 0; height: 100%; overflow: hidden; background: #cfdbe6; font-family: system-ui, sans-serif; }
   #credit { position: fixed; right: 8px; bottom: 6px; font-size: 11px; color: #333;
@@ -59,7 +59,7 @@ document.body.appendChild(renderer.domElement);
 
 const scene = new THREE.Scene();
 scene.background = new THREE.Color('#cfdbe6');
-scene.fog = new THREE.Fog('#cfdbe6', 1500, 4000);        // light Delhi haze in the distance
+scene.fog = new THREE.Fog('#cfdbe6', 1500, 4000);        // haze; refitted to the area below
 
 const pmrem = new THREE.PMREMGenerator(renderer);         // soft reflected light
 scene.environment = pmrem.fromScene(new RoomEnvironment(), 0.04).texture;
@@ -80,15 +80,15 @@ const sun = new THREE.DirectionalLight('#fff4e0', 3.0);
 sun.position.set(-700, 800, 700);                         // afternoon sun from the south-west
 sun.castShadow = true;
 sun.shadow.mapSize.set(2048, 2048);
-Object.assign(sun.shadow.camera, { left: -1300, right: 1300, top: 1300, bottom: -1300, near: 10, far: 3000 });
 sun.shadow.bias = -0.0005;
 sun.shadow.normalBias = 0.5;
 scene.add(sun);
 
 // ---------- ground layers ----------
-// Our data: x = east, y = north (metres from CP's centre).
+// Site data: x = east, y = north (metres from the area's origin).
 // three.js: x = east, y = up, z = south. rotateX(-90°) maps (x, y) -> (x, 0, -y).
 function addFlatLayer(parts, color, lift) {
+  if (!parts.length) return;
   const geoms = parts.map(({ o, i }) => {
     const shape = new THREE.Shape(toPoints(o));
     i.forEach((hole) => shape.holes.push(new THREE.Path(toPoints(hole))));
@@ -226,6 +226,7 @@ function addRoofProps(list) {
   });
 
   const place = (geo, mat, items) => {
+    if (!items.length) return;
     const mesh = new THREE.InstancedMesh(geo, mat, items.length);
     const m = new THREE.Matrix4();
     items.forEach(([x, y, h], i) => mesh.setMatrixAt(i, m.makeTranslation(x, h, -y)));
@@ -272,20 +273,44 @@ function addTrees(list) {
   }
 }
 
+// ---------- load the area ----------
+// Pick the area from the URL: /web3d/?area=connaught-place
+const AREA = new URLSearchParams(location.search).get('area') || 'connaught-place';
+if (!/^[a-z0-9-]+$/.test(AREA)) throw new Error(`bad area name: ${AREA}`);
+const SITE = `../sites/${AREA}/`;
+document.title = `${AREA} · Isovia Labs 3D`;
+
+const [city, ground, trees] = await Promise.all([
+  fetch(SITE + 'buildings.json').then((r) => {
+    if (!r.ok) throw new Error(`no site built for "${AREA}": run python -m city3d build areas/${AREA}.yaml`);
+    return r.json();
+  }),
+  fetch(SITE + 'ground.json').then((r) => (r.ok ? r.json() : { roads: [], green: [] })),
+  fetch(SITE + 'trees.json').then((r) => (r.ok ? r.json() : { trees: [] })),
+]);
+
+// ---------- fit camera, shadows and haze to this area's size ----------
+let R = 100;
+for (const b of city.buildings) for (const [x, y] of b.p) R = Math.max(R, Math.abs(x), Math.abs(y));
+Object.assign(sun.shadow.camera, { left: -R, right: R, top: R, bottom: -R, near: 10, far: R * 4 });
+sun.shadow.camera.updateProjectionMatrix();
+sun.position.set(-0.54, 0.62, 0.54).multiplyScalar(R * 1.6);   // same south-west afternoon sun
+camera.position.set(R * 0.75, R * 0.6, R * 0.75);
+camera.far = R * 10;
+camera.updateProjectionMatrix();
+controls.maxDistance = R * 3.5;
+scene.fog.near = R * 1.2;
+scene.fog.far = R * 3.5;
+
 // ---------- build the city ----------
 const base = new THREE.Mesh(
-  new THREE.PlaneGeometry(8000, 8000),
+  new THREE.PlaneGeometry(R * 8, R * 8),
   new THREE.MeshStandardMaterial({ color: '#a8a293', roughness: 1 })
 );
 base.rotation.x = -Math.PI / 2;
 base.receiveShadow = true;
 scene.add(base);
 
-const [city, ground, trees] = await Promise.all([
-  fetch('buildings.json').then((r) => r.json()),
-  fetch('ground.json').then((r) => r.json()),
-  fetch('trees.json').then((r) => (r.ok ? r.json() : { trees: [] })),
-]);
 addFlatLayer(ground.green, '#8fae6a', 0.05);
 addFlatLayer(ground.roads, '#5d5f63', 0.1);
 addBuildings(city.buildings);
