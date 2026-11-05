@@ -7,7 +7,7 @@ earth_engine_project: isovia-delhi3d
 
 buildings:
   source: open_buildings              # Africa, South/Southeast Asia, Latin America, Caribbean
-  min_confidence: 0.65
+  min_confidence: 0.75
   require_height_below_confidence: 0.75
   tower_height_m: 30
   mid_height_m: 10

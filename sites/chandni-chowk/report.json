@@ -12,35 +12,35 @@
   "area_km2": 4.737,
   "settings": {
     "source": "open_buildings",
-    "min_confidence": 0.65,
+    "min_confidence": 0.75,
     "railway_mask_below_confidence": 0.75,
     "tower_height_m": 30,
     "require_height_below_confidence": 0.75
   },
   "buildings": {
-    "count": 22854,
-    "per_km2": 4825,
+    "count": 8706,
+    "per_km2": 1838,
     "by_type": {
-      "low": 19738,
-      "mid": 2558,
+      "low": 6846,
       "estimated": 553,
-      "tower": 5
+      "mid": 1304,
+      "tower": 3
     },
-    "measured_height_share": 0.976,
+    "measured_height_share": 0.936,
     "height_m": {
-      "median": 7.1,
-      "p90": 10.2,
+      "median": 7.5,
+      "p90": 10.9,
       "max": 37.9
     },
-    "footprint_coverage": 0.334
+    "footprint_coverage": 0.194
   },
   "ground": {
     "road_share": 0.143,
     "green_share": 0.055
   },
   "trees": {
-    "count": 6590,
-    "per_km2": 1391
+    "count": 9500,
+    "per_km2": 2006
   },
   "sources": {
     "buildings": "Google Open Buildings v3 + 2.5D Temporal (CC BY 4.0)",
