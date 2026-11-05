@@ -1,0 +1,200 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Delhi 3D: city view</title>
+<style>
+  html, body { margin: 0; height: 100%; overflow: hidden; background: #cfdbe6; font-family: system-ui, sans-serif; }
+  #credit { position: fixed; right: 8px; bottom: 6px; font-size: 11px; color: #333;
+            background: rgba(255,255,255,0.75); padding: 2px 6px; border-radius: 4px; }
+</style>
+<script type="importmap">
+{
+  "imports": {
+    "three": "https://cdn.jsdelivr.net/npm/three@0.170.0/build/three.module.js",
+    "three/addons/": "https://cdn.jsdelivr.net/npm/three@0.170.0/examples/jsm/"
+  }
+}
+</script>
+</head>
+<body>
+<div id="credit">Buildings: Google Open Buildings (CC BY 4.0) · Roads &amp; parks: © OpenStreetMap contributors (ODbL)</div>
+<script type="module">
+import * as THREE from 'three';
+import { MapControls } from 'three/addons/controls/MapControls.js';
+import { mergeGeometries } from 'three/addons/utils/BufferGeometryUtils.js';
+import { RoomEnvironment } from 'three/addons/environments/RoomEnvironment.js';
+
+// ---------- renderer, scene, camera ----------
+const renderer = new THREE.WebGLRenderer({ antialias: true });
+renderer.setPixelRatio(Math.min(devicePixelRatio, 2));
+renderer.setSize(innerWidth, innerHeight);
+renderer.shadowMap.enabled = true;
+renderer.shadowMap.type = THREE.PCFSoftShadowMap;
+renderer.toneMapping = THREE.ACESFilmicToneMapping;
+document.body.appendChild(renderer.domElement);
+
+const scene = new THREE.Scene();
+scene.background = new THREE.Color('#cfdbe6');
+scene.fog = new THREE.Fog('#cfdbe6', 1500, 4000);        // light Delhi haze in the distance
+
+// soft reflected light so glass and surfaces aren't flat
+const pmrem = new THREE.PMREMGenerator(renderer);
+scene.environment = pmrem.fromScene(new RoomEnvironment(), 0.04).texture;
+scene.environmentIntensity = 0.35;
+
+const camera = new THREE.PerspectiveCamera(45, innerWidth / innerHeight, 1, 10000);
+camera.position.set(900, 700, 900);
+
+const controls = new MapControls(camera, renderer.domElement);
+controls.enableDamping = true;
+controls.maxPolarAngle = Math.PI / 2.2;                   // can't tilt below the ground
+controls.minDistance = 50;
+controls.maxDistance = 4000;
+
+// ---------- light ----------
+scene.add(new THREE.HemisphereLight('#e4eef7', '#8a8170', 0.8));  // soft sky light
+const sun = new THREE.DirectionalLight('#fff4e0', 2.5);
+sun.position.set(-700, 800, 700);                         // afternoon sun from the south-west
+sun.castShadow = true;
+sun.shadow.mapSize.set(4096, 4096);
+Object.assign(sun.shadow.camera, { left: -1300, right: 1300, top: 1300, bottom: -1300, near: 10, far: 3000 });
+sun.shadow.bias = -0.0005;
+sun.shadow.normalBias = 0.5;
+scene.add(sun);
+
+// ---------- helpers ----------
+// Our data: x = east, y = north (metres from CP's centre).
+// three.js: x = east, y = up, z = south. rotateX(-90°) maps (x, y) -> (x, 0, -y).
+const toPoints = (ring) => ring.map(([x, y]) => new THREE.Vector2(x, y));
+
+function addFlatLayer(parts, color, lift) {
+  const geoms = parts.map(({ o, i }) => {
+    const shape = new THREE.Shape(toPoints(o));
+    i.forEach((hole) => shape.holes.push(new THREE.Path(toPoints(hole))));
+    return new THREE.ShapeGeometry(shape);
+  });
+  const geom = mergeGeometries(geoms);
+  geom.rotateX(-Math.PI / 2);
+  const mesh = new THREE.Mesh(geom, new THREE.MeshStandardMaterial({ color, roughness: 1 }));
+  mesh.position.y = lift;                                 // tiny lift stops layers flickering
+  mesh.receiveShadow = true;
+  scene.add(mesh);
+}
+
+// ---------- building styles ----------
+const STYLE = {
+  tower:     { wall: '#c9d3dc', roof: '#8e979f', glass: '#3d5a73', bay: 1.6, winW: 0.9, winH: 0.65 },
+  mid:       { wall: '#e6dfd1', roof: '#b9b3a6', glass: '#4a5560', bay: 3.0, winW: 0.5, winH: 0.45 },
+  low:       { wall: '#f1ebdf', roof: '#c4bdb0', glass: '#4f5964', bay: 3.2, winW: 0.4, winH: 0.45 },
+  estimated: { wall: '#b8bcc3', roof: '#a3a7ad' },   // no windows: its height is a guess
+};
+
+// Walls as quads. uv = (metres along this wall, metres above ground)
+function wallGeometry(ring, h) {
+  const pos = [], uv = [];
+  for (let k = 0; k < ring.length; k++) {
+    const [x1, y1] = ring[k];
+    const [x2, y2] = ring[(k + 1) % ring.length];
+    const len = Math.hypot(x2 - x1, y2 - y1);
+    const a = [x1, 0, -y1], b = [x2, 0, -y2], c = [x2, h, -y2], d = [x1, h, -y1];
+    pos.push(...a, ...b, ...c, ...a, ...c, ...d);
+    uv.push(0, 0, len, 0, len, h, 0, 0, len, h, 0, h);
+  }
+  const g = new THREE.BufferGeometry();
+  g.setAttribute('position', new THREE.Float32BufferAttribute(pos, 3));
+  g.setAttribute('uv', new THREE.Float32BufferAttribute(uv, 2));
+  g.computeVertexNormals();
+  return g;
+}
+
+// A normal lit material, plus a shader snippet that paints windows
+function windowMaterial(s) {
+  const m = new THREE.MeshStandardMaterial({ color: s.wall, roughness: 0.85 });
+  m.defines = { USE_UV: '' };
+  m.onBeforeCompile = (shader) => {
+    Object.assign(shader.uniforms, {
+      uBayW: { value: s.bay }, uFloorH: { value: 3.2 },
+      uWinW: { value: s.winW }, uWinH: { value: s.winH },
+      uGlass: { value: new THREE.Color(s.glass) },
+    });
+    shader.fragmentShader = shader.fragmentShader
+      .replace('#include <common>', `#include <common>
+        uniform float uBayW, uFloorH, uWinW, uWinH;
+        uniform vec3 uGlass;
+        float winMask(vec2 p) {
+          if (p.y < uFloorH) {                     // ground floor: wide shopfronts
+            float fx = fract(p.x / 4.0);
+            return step(0.08, fx) * step(fx, 0.92) * step(0.15, p.y) * step(p.y, 2.6);
+          }
+          float fx = fract(p.x / uBayW);           // which window column
+          float fy = fract(p.y / uFloorH);         // which floor
+          float m = (1.0 - uWinW) * 0.5;
+          return step(m, fx) * step(fx, 1.0 - m) * step(0.3, fy) * step(fy, 0.3 + uWinH);
+        }`)
+      .replace('#include <color_fragment>', `#include <color_fragment>
+        float win = winMask(vUv);
+        float fade = smoothstep(500.0, 1400.0, length(vViewPosition));   // far away: blend to average
+        win = mix(win, uWinW * uWinH * 0.9, fade);
+        diffuseColor.rgb = mix(diffuseColor.rgb, uGlass, win);`)
+      .replace('#include <roughnessmap_fragment>', `#include <roughnessmap_fragment>
+        roughnessFactor = mix(roughnessFactor, 0.15, win);               // glass is shiny`);
+  };
+  return m;
+}
+
+function addBuildings(list) {
+  const walls = {}, roofs = {};
+  for (const b of list) {
+    (walls[b.c] ??= []).push(wallGeometry(b.p, b.h));
+    const roof = new THREE.ShapeGeometry(new THREE.Shape(toPoints(b.p)));
+    roof.rotateX(-Math.PI / 2);
+    roof.translate(0, b.h, 0);
+    (roofs[b.c] ??= []).push(roof);
+  }
+  for (const type of Object.keys(walls)) {
+    const s = STYLE[type];
+    const wallMat = s.glass
+      ? windowMaterial(s)
+      : new THREE.MeshStandardMaterial({ color: s.wall, roughness: 0.9 });
+    const roofMat = new THREE.MeshStandardMaterial({ color: s.roof, roughness: 0.95 });
+    for (const [geoms, mat] of [[walls[type], wallMat], [roofs[type], roofMat]]) {
+      const mesh = new THREE.Mesh(mergeGeometries(geoms), mat);
+      mesh.castShadow = true;
+      mesh.receiveShadow = true;
+      scene.add(mesh);
+    }
+  }
+}
+
+// ---------- build the city ----------
+const base = new THREE.Mesh(
+  new THREE.PlaneGeometry(8000, 8000),
+  new THREE.MeshStandardMaterial({ color: '#a8a293', roughness: 1 })
+);
+base.rotation.x = -Math.PI / 2;
+base.receiveShadow = true;
+scene.add(base);
+
+const [city, ground] = await Promise.all([
+  fetch('buildings.json').then((r) => r.json()),
+  fetch('ground.json').then((r) => r.json()),
+]);
+addFlatLayer(ground.green, '#8fae6a', 0.05);
+addFlatLayer(ground.roads, '#5d5f63', 0.1);
+addBuildings(city.buildings);
+
+// ---------- loop ----------
+addEventListener('resize', () => {
+  camera.aspect = innerWidth / innerHeight;
+  camera.updateProjectionMatrix();
+  renderer.setSize(innerWidth, innerHeight);
+});
+renderer.setAnimationLoop(() => {
+  controls.update();
+  renderer.render(scene, camera);
+});
+</script>
+</body>
+</html>
