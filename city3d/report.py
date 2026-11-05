@@ -3,6 +3,7 @@ from collections import Counter
 from datetime import date
 
 from shapely.geometry import Polygon
+from shapely.ops import unary_union
 
 from .common import area_polygon, opt
 
@@ -17,7 +18,7 @@ def _pct(values, q):
 
 
 def _area(parts):
-    return sum(Polygon(p["o"], p["i"]).buffer(0).area for p in parts)
+    return unary_union([Polygon(p["o"], p["i"]).buffer(0) for p in parts]).area if parts else 0.0
 
 
 def build(area):
@@ -28,7 +29,8 @@ def build(area):
     km2 = m2 / 1e6
     blds = city["buildings"]
     measured = [b["h"] for b in blds if b["c"] != "estimated"]
-    footprint = sum(Polygon(b["p"]).buffer(0).area for b in blds if len(b["p"]) >= 3)
+    # overlaps counted once
+    footprint = unary_union([Polygon(b["p"]).buffer(0) for b in blds if len(b["p"]) >= 3]).area
     source = opt(area, "buildings.source", "open_buildings")
 
     report = {
@@ -38,6 +40,13 @@ def build(area):
         "bbox": list(area.bbox),
         "projection": area.crs,
         "area_km2": round(km2, 3),
+        "settings": {
+            "source": source,
+            "min_confidence": opt(area, "buildings.min_confidence", 0.75),
+            "railway_mask_below_confidence": opt(area, "buildings.railway_mask_below_confidence", 0.75),
+            "tower_height_m": opt(area, "buildings.tower_height_m", 30),
+            "require_height_below_confidence": opt(area, "buildings.require_height_below_confidence", None),
+        },
         "buildings": {
             "count": len(blds),
             "per_km2": round(len(blds) / km2),
@@ -60,7 +69,8 @@ def build(area):
     (area.site_dir / "report.json").write_text(json.dumps(report, indent=2))
 
     b = report["buildings"]
-    print(f"  {km2:.2f} km2 | {b['count']} buildings ({b['per_km2']}/km2) | "
-          f"{b['measured_height_share']:.0%} measured | median {b['height_m']['median']} m, max {b['height_m']['max']} m")
+    print(f"  min_confidence {report['settings']['min_confidence']} | {km2:.2f} km2 | "
+          f"{b['count']} buildings ({b['per_km2']}/km2) | {b['measured_height_share']:.0%} measured | "
+          f"median {b['height_m']['median']} m, max {b['height_m']['max']} m")
     print(f"  footprint {b['footprint_coverage']:.0%} | roads {report['ground']['road_share']:.0%} | "
           f"green {report['ground']['green_share']:.0%} | {report['trees']['count']} trees -> report.json")

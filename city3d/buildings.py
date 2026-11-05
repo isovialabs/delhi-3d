@@ -3,10 +3,10 @@ import pandas as pd
 from shapely.geometry import Polygon
 from shapely.geometry.polygon import orient
 
-from .common import opt, origin_xy, ring_to_local, write_json
+from .common import area_polygon, opt, origin_xy, ring_to_local, write_json
 
 
-def fetch_open_buildings(area):
+def fetch_open_buildings(area, min_conf):
     """Google Open Buildings footprints + 2.5D Temporal heights, via Earth Engine."""
     import ee
     ee.Initialize(project=opt(area, "earth_engine_project", "isovia-delhi3d"))
@@ -14,7 +14,7 @@ def fetch_open_buildings(area):
     footprints = (
         ee.FeatureCollection("GOOGLE/Research/open-buildings/v3/polygons")
         .filterBounds(aoi)
-        .filter(ee.Filter.gte("confidence", opt(area, "buildings.min_confidence", 0.75)))
+        .filter(ee.Filter.gte("confidence", min_conf))
     )
     temporal = ee.ImageCollection("GOOGLE/Research/open-buildings-temporal/v1").filterBounds(aoi)
     latest = temporal.aggregate_max("inference_time_epoch_s")
@@ -31,19 +31,51 @@ def fetch_open_buildings(area):
 SOURCES = {"open_buildings": fetch_open_buildings}
 
 
+def railway_land(area):
+    """OSM railway land as one shape (lon/lat), or None."""
+    import osmnx
+    try:
+        rail = osmnx.features_from_polygon(area_polygon(area), tags={"landuse": "railway"})
+    except Exception:
+        return None
+    rail = rail[rail.geom_type.isin(["Polygon", "MultiPolygon"])]
+    return rail.union_all() if len(rail) else None
+
+
 def build(area, refresh=False):
-    raw = area.data_dir / "buildings_raw.geojson"
+    min_conf = opt(area, "buildings.min_confidence", 0.75)
+    source = opt(area, "buildings.source", "open_buildings")
+
+    # Cache name records the settings, so a config change never reuses stale data
+    raw = area.data_dir / f"buildings_raw_{source}_c{round(min_conf * 100):03d}.geojson"
     if raw.exists() and not refresh:
         gdf = gpd.read_file(raw)
-        print(f"  using cached {raw}  (add --refresh to re-download)")
+        print(f"  using cached {raw.name}  (add --refresh to re-download)")
     else:
-        source = opt(area, "buildings.source", "open_buildings")
         if source not in SOURCES:
             raise SystemExit(f"unknown building source: {source}")
-        gdf = SOURCES[source](area)
+        gdf = SOURCES[source](area, min_conf)
         if gdf.empty:
             raise SystemExit("no buildings found: check the area is covered by this source")
         gdf.to_file(raw, driver="GeoJSON")
+
+    # Railway mask: drop low-confidence detections on railway land (platforms, trains)
+    gdf["confidence"] = pd.to_numeric(gdf["confidence"], errors="coerce")
+    mask_below = opt(area, "buildings.railway_mask_below_confidence", 0.75)
+    if mask_below:
+        rail = railway_land(area)
+        if rail is not None:
+            on_rail = gdf.geometry.representative_point().within(rail) & (gdf["confidence"] < mask_below)
+            print(f"  railway mask: dropped {int(on_rail.sum())} low-confidence detections")
+            gdf = gdf[~on_rail]
+
+    # Low-confidence footprints must be confirmed by the height data
+    confirm_below = opt(area, "buildings.require_height_below_confidence", None)
+    if confirm_below:
+        h75 = pd.to_numeric(gdf["h_p75"], errors="coerce").fillna(0)
+        unconfirmed = (gdf["confidence"] < confirm_below) & (h75 < opt(area, "buildings.min_measured_height_m", 2.5))
+        print(f"  height check: dropped {int(unconfirmed.sum())} low-confidence detections with no height signal")
+        gdf = gdf[~unconfirmed]
 
     # Heights: 75th percentile; anything too low gets a flagged default
     for col in ("h_median", "h_p75"):

@@ -2,3 +2,6 @@ name: chandni-chowk
 title: Chandni Chowk, Old Delhi
 bbox: [77.219, 28.647, 77.242, 28.666]    # includes Jama Masjid and the Red Fort's west side
 earth_engine_project: isovia-delhi3d
+buildings:
+    min_confidence: 0.65
+    require_height_below_confidence: 0.75

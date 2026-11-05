@@ -10,30 +10,37 @@
   ],
   "projection": "EPSG:32643",
   "area_km2": 4.738,
+  "settings": {
+    "source": "open_buildings",
+    "min_confidence": 0.65,
+    "railway_mask_below_confidence": 0.75,
+    "tower_height_m": 30,
+    "require_height_below_confidence": 0.75
+  },
   "buildings": {
-    "count": 3201,
-    "per_km2": 676,
+    "count": 6509,
+    "per_km2": 1374,
     "by_type": {
+      "mid": 1838,
+      "low": 4001,
       "estimated": 427,
-      "low": 1617,
-      "mid": 1000,
-      "tower": 157
+      "tower": 243
     },
-    "measured_height_share": 0.867,
+    "measured_height_share": 0.934,
     "height_m": {
-      "median": 8.7,
-      "p90": 22.2,
-      "max": 93.2
+      "median": 7.9,
+      "p90": 16.1,
+      "max": 93.3
     },
-    "footprint_coverage": 0.17
+    "footprint_coverage": 0.218
   },
   "ground": {
     "road_share": 0.2,
     "green_share": 0.03
   },
   "trees": {
-    "count": 12590,
-    "per_km2": 2657
+    "count": 11282,
+    "per_km2": 2381
   },
   "sources": {
     "buildings": "Google Open Buildings v3 + 2.5D Temporal (CC BY 4.0)",
