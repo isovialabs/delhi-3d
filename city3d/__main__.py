@@ -1,11 +1,11 @@
 import argparse
 import time
 
-from . import buildings, ground, report, shade, trees
+from . import buildings, ground, raster, report, rshade, shade, streets, trees
 from .common import load_area
 
-STEPS = {"buildings": None, "ground": ground.build, "trees": trees.build,
-         "shade": shade.build, "report": report.build}
+STEPS = {"buildings": None, "ground": ground.build, "trees": trees.build, "streets": streets.build,
+         "shade": shade.build, "raster": raster.build, "rshade": rshade.build, "report": report.build}
 DEFAULT = "buildings,ground,trees,report"
 
 
