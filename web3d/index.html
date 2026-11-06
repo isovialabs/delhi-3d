@@ -8,23 +8,49 @@
   html, body { margin: 0; height: 100%; overflow: hidden; background: #cfdbe6; font-family: system-ui, sans-serif; }
   #credit { position: fixed; right: 8px; bottom: 6px; font-size: 11px; color: #333;
             background: rgba(255,255,255,0.75); padding: 2px 6px; border-radius: 4px; }
+  #sunpanel { position: fixed; left: 12px; bottom: 12px; width: 270px; padding: 12px 14px; border-radius: 10px;
+              background: rgba(14,26,43,0.88); color: #eef2f6; font-size: 13px; }
+  #sunpanel .row { display: flex; gap: 8px; align-items: center; margin: 6px 0; flex-wrap: wrap; }
+  #sunpanel input[type=range] { width: 100%; }
+  #sunpanel input[type=date] { font: inherit; background: #1b2c44; color: #eef2f6; border: 1px solid #34506f; border-radius: 6px; padding: 4px 6px; }
+  #sunpanel button { font: inherit; background: #1b2c44; color: #eef2f6; border: 1px solid #34506f; border-radius: 6px;
+                     padding: 6px 10px; cursor: pointer; min-height: 32px; }
+  #sunpanel button:hover { background: #26405f; }
+  #sunlabel { color: #f5a524; font-variant-numeric: tabular-nums; }
+  .sr { position: absolute; width: 1px; height: 1px; overflow: hidden; clip: rect(0 0 0 0); }
 </style>
 <script type="importmap">
 {
   "imports": {
     "three": "https://cdn.jsdelivr.net/npm/three@0.170.0/build/three.module.js",
-    "three/addons/": "https://cdn.jsdelivr.net/npm/three@0.170.0/examples/jsm/"
+    "three/addons/": "https://cdn.jsdelivr.net/npm/three@0.170.0/examples/jsm/",
+    "suncalc": "https://cdn.jsdelivr.net/npm/suncalc@1.9.0/+esm"
   }
 }
 </script>
 </head>
 <body>
+<div id="sunpanel">
+  <div class="row">
+    <label for="date" class="sr">Date</label>
+    <input type="date" id="date">
+    <button id="play" aria-label="Play the day">▶</button>
+  </div>
+  <label for="time" class="sr">Time of day (Delhi time)</label>
+  <input type="range" id="time" min="300" max="1200" step="5" value="900">
+  <div id="sunlabel"></div>
+  <div class="row">
+    <button data-preset="06-15" data-min="900">June, 3 pm</button>
+    <button data-preset="12-15" data-min="900">December, 3 pm</button>
+  </div>
+</div>
 <div id="credit">Buildings: Google Open Buildings (CC BY 4.0) · Roads &amp; parks: © OpenStreetMap contributors (ODbL)</div>
 <script type="module">
 import * as THREE from 'three';
 import { MapControls } from 'three/addons/controls/MapControls.js';
 import { mergeGeometries } from 'three/addons/utils/BufferGeometryUtils.js';
 import { RoomEnvironment } from 'three/addons/environments/RoomEnvironment.js';
+import SunCalc from 'suncalc';
 
 // ---------- small helpers ----------
 // repeatable "random" number in [0, 1) from an index, so the city looks the same every load
@@ -57,9 +83,11 @@ renderer.shadowMap.type = THREE.PCFSoftShadowMap;
 renderer.toneMapping = THREE.ACESFilmicToneMapping;
 document.body.appendChild(renderer.domElement);
 
+const DAY_SKY = new THREE.Color('#cfdbe6');
+const NIGHT_SKY = new THREE.Color('#141c2a');
 const scene = new THREE.Scene();
-scene.background = new THREE.Color('#cfdbe6');
-scene.fog = new THREE.Fog('#cfdbe6', 1500, 4000);        // haze; refitted to the area below
+scene.background = DAY_SKY.clone();
+scene.fog = new THREE.Fog(DAY_SKY.clone(), 1500, 4000);  // haze; refitted to the area below
 
 const pmrem = new THREE.PMREMGenerator(renderer);         // soft reflected light
 scene.environment = pmrem.fromScene(new RoomEnvironment(), 0.04).texture;
@@ -75,9 +103,9 @@ controls.minDistance = 50;
 controls.maxDistance = 4000;
 
 // ---------- light ----------
-scene.add(new THREE.HemisphereLight('#e4eef7', '#8a8170', 0.5));  // soft sky light
-const sun = new THREE.DirectionalLight('#fff4e0', 3.0);
-sun.position.set(-700, 800, 700);                         // afternoon sun from the south-west
+const sky = new THREE.HemisphereLight('#e4eef7', '#8a8170', 0.5);   // soft sky light
+scene.add(sky);
+const sun = new THREE.DirectionalLight('#fff4e0', 3.0);   // positioned by the real sun below
 sun.castShadow = true;
 sun.shadow.mapSize.set(2048, 2048);
 sun.shadow.bias = -0.0005;
@@ -288,19 +316,78 @@ const [city, ground, trees] = await Promise.all([
   fetch(SITE + 'ground.json').then((r) => (r.ok ? r.json() : { roads: [], green: [] })),
   fetch(SITE + 'trees.json').then((r) => (r.ok ? r.json() : { trees: [] })),
 ]);
+const [LON, LAT] = city.origin;
 
 // ---------- fit camera, shadows and haze to this area's size ----------
 let R = 100;
 for (const b of city.buildings) for (const [x, y] of b.p) R = Math.max(R, Math.abs(x), Math.abs(y));
 Object.assign(sun.shadow.camera, { left: -R, right: R, top: R, bottom: -R, near: 10, far: R * 4 });
 sun.shadow.camera.updateProjectionMatrix();
-sun.position.set(-0.54, 0.62, 0.54).multiplyScalar(R * 1.6);   // same south-west afternoon sun
 camera.position.set(R * 0.75, R * 0.6, R * 0.75);
 camera.far = R * 10;
 camera.updateProjectionMatrix();
 controls.maxDistance = R * 3.5;
 scene.fog.near = R * 1.2;
 scene.fog.far = R * 3.5;
+
+// ---------- the real sun ----------
+const WARM = new THREE.Color('#ffb070'), WHITE = new THREE.Color('#fff4e0');
+const IST_OFFSET_MIN = 330;                      // Delhi is UTC+5:30
+
+// date string "YYYY-MM-DD" + minutes after midnight in Delhi -> a real instant in time
+function delhiTime(dateStr, minutes) {
+  const [y, m, d] = dateStr.split('-').map(Number);
+  return new Date(Date.UTC(y, m - 1, d, 0, minutes) - IST_OFFSET_MIN * 60000);
+}
+
+function setSun(when) {
+  // suncalc: altitude above horizon; azimuth measured from south, positive towards west (radians)
+  const { altitude: alt, azimuth: az } = SunCalc.getPosition(when, LAT, LON);
+  // three.js axes: x = east, y = up, z = south
+  const dir = new THREE.Vector3(-Math.sin(az) * Math.cos(alt), Math.sin(alt), Math.cos(az) * Math.cos(alt));
+  sun.position.copy(dir).multiplyScalar(R * 1.6);
+
+  const day = THREE.MathUtils.smoothstep(alt, -0.05, 0.15);          // 0 at night, 1 in daylight
+  sun.intensity = 3.0 * day;
+  sky.intensity = 0.12 + 0.38 * day;
+  sun.color.copy(WARM).lerp(WHITE, THREE.MathUtils.smoothstep(alt, 0.05, 0.6));  // warm when low
+  scene.background.copy(NIGHT_SKY).lerp(DAY_SKY, day);
+  scene.fog.color.copy(scene.background);
+  return { alt, az };
+}
+
+// ---------- sun controls ----------
+const dateEl = document.getElementById('date');
+const timeEl = document.getElementById('time');
+const labelEl = document.getElementById('sunlabel');
+const playEl = document.getElementById('play');
+dateEl.value = new Date().toISOString().slice(0, 10);
+
+function update() {
+  const mins = Number(timeEl.value);
+  const { alt, az } = setSun(delhiTime(dateEl.value, mins));
+  const hh = String(Math.floor(mins / 60)).padStart(2, '0'), mm = String(mins % 60).padStart(2, '0');
+  const elev = THREE.MathUtils.radToDeg(alt);
+  const bearing = (THREE.MathUtils.radToDeg(az) + 180 + 360) % 360;   // compass bearing of the sun
+  labelEl.textContent = elev > 0
+    ? `${hh}:${mm} Delhi time · sun ${elev.toFixed(0)}° high, bearing ${bearing.toFixed(0)}°`
+    : `${hh}:${mm} Delhi time · sun below the horizon`;
+}
+dateEl.addEventListener('input', update);
+timeEl.addEventListener('input', update);
+document.querySelectorAll('[data-preset]').forEach((b) => b.addEventListener('click', () => {
+  dateEl.value = `${dateEl.value.slice(0, 4)}-${b.dataset.preset}`;
+  timeEl.value = b.dataset.min;
+  update();
+}));
+
+let playing = false, last = 0;
+playEl.addEventListener('click', () => {
+  playing = !playing;
+  playEl.textContent = playing ? '❚❚' : '▶';
+  playEl.setAttribute('aria-label', playing ? 'Pause' : 'Play the day');
+});
+update();
 
 // ---------- build the city ----------
 const base = new THREE.Mesh(
@@ -323,7 +410,14 @@ addEventListener('resize', () => {
   camera.updateProjectionMatrix();
   renderer.setSize(innerWidth, innerHeight);
 });
-renderer.setAnimationLoop(() => {
+renderer.setAnimationLoop((t) => {
+  if (playing && t - last > 50) {                // play: about 2 hours of sun per 3 seconds
+    last = t;
+    let v = Number(timeEl.value) + 2;
+    if (v > Number(timeEl.max)) v = Number(timeEl.min);
+    timeEl.value = v;
+    update();
+  }
   controls.update();
   renderer.render(scene, camera);
 });
