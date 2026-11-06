@@ -1,7 +1,7 @@
 {
   "area": "chandni-chowk",
   "title": "Chandni Chowk, Old Delhi",
-  "generated": "2026-11-05",
+  "generated": "2026-11-06",
   "bbox": [
     77.219,
     28.647,
@@ -35,12 +35,12 @@
     "footprint_coverage": 0.194
   },
   "ground": {
-    "road_share": 0.143,
+    "road_share": 0.14,
     "green_share": 0.055
   },
   "trees": {
-    "count": 9500,
-    "per_km2": 2006
+    "count": 6496,
+    "per_km2": 1371
   },
   "sources": {
     "buildings": "Google Open Buildings v3 + 2.5D Temporal (CC BY 4.0)",

@@ -1,7 +1,7 @@
 {
   "area": "connaught-place",
   "title": "Connaught Place, New Delhi",
-  "generated": "2026-11-05",
+  "generated": "2026-11-06",
   "bbox": [
     77.205,
     28.622,
@@ -35,12 +35,12 @@
     "footprint_coverage": 0.169
   },
   "ground": {
-    "road_share": 0.2,
+    "road_share": 0.199,
     "green_share": 0.03
   },
   "trees": {
-    "count": 12590,
-    "per_km2": 2657
+    "count": 12302,
+    "per_km2": 2597
   },
   "sources": {
     "buildings": "Google Open Buildings v3 + 2.5D Temporal (CC BY 4.0)",

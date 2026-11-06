@@ -19,3 +19,4 @@ trees:
   park_m2_per_tree: 250
   open_m2_per_tree: 500
   seed: 42
+  street_classes: [major, local]

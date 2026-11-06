@@ -10,7 +10,7 @@ from .common import area_polygon, opt, origin_xy, write_json
 
 
 def _union(parts):
-    return unary_union([Polygon(p["o"], p["i"]).buffer(0) for p in parts])
+    return unary_union([Polygon(p["o"], p["i"]).buffer(0) for p in parts]) if parts else Polygon()
 
 
 def build(area):
@@ -23,8 +23,20 @@ def build(area):
 
     buildings = unary_union([Polygon(b["p"]).buffer(0) for b in city["buildings"] if len(b["p"]) >= 3])
     roads = _union(ground["roads"])
+    walkways = _union(ground.get("walkways", []))
     green = _union(ground["green"])
-    blocked = prep(unary_union([buildings.buffer(2.5), roads.buffer(0.5)]))
+    blocked = prep(unary_union([buildings.buffer(2.5), roads.buffer(0.5), walkways.buffer(0.3)]))
+
+    # Which road classes get rows of street trees (default: major roads only)
+    street_classes = opt(area, "trees.street_classes", ["major"])
+    classes = ground.get("classes")
+    if classes is None:                                       # older ground.json without classes
+        lined = roads
+    else:
+        parts = []
+        for c in street_classes:
+            parts += ground.get("walkways", []) if c == "walkways" else classes.get(c, [])
+        lined = _union(parts)
 
     trees, counts = [], {"street": 0, "park": 0, "open": 0}
 
@@ -35,15 +47,16 @@ def build(area):
             return True
         return False
 
-    # 1. Street trees along a line just outside every road edge
+    # 1. Street trees along a line just outside the chosen roads' edges
     spacing = opt(area, "trees.street_spacing_m", 15)
-    edge = roads.buffer(3.5).boundary
-    for line in getattr(edge, "geoms", [edge]):
-        d = 0.0
-        while d < line.length:
-            if rng.random() < 0.75:
-                add(line.interpolate(d + rng.uniform(-2, 2)), "street", 0.9, 1.4)
-            d += spacing
+    if not lined.is_empty:
+        edge = lined.buffer(3.5).boundary
+        for line in getattr(edge, "geoms", [edge]):
+            d = 0.0
+            while d < line.length:
+                if rng.random() < 0.75:
+                    add(line.interpolate(d + rng.uniform(-2, 2)), "street", 0.9, 1.4)
+                d += spacing
 
     # 2 and 3. Scatter trees inside a region
     def scatter(region, m2_per_tree, kind, smin, smax):
@@ -62,9 +75,9 @@ def build(area):
 
     scatter(green, opt(area, "trees.park_m2_per_tree", 250), "park", 0.9, 1.6)
 
-    open_land = bounds.difference(unary_union([buildings.buffer(3), roads.buffer(1), green]))
+    open_land = bounds.difference(unary_union([buildings.buffer(3), roads.buffer(1), walkways.buffer(1), green]))
     open_land = unary_union([g for g in getattr(open_land, "geoms", [open_land]) if g.area > 150])
     scatter(open_land, opt(area, "trees.open_m2_per_tree", 500), "open", 0.8, 1.5)
 
     kb = write_json(area.site_dir / "trees.json", {"trees": trees})
-    print(f"  {len(trees)} trees {counts} -> trees.json ({kb:.0f} KB)")
+    print(f"  street trees along {street_classes} | {len(trees)} trees {counts} -> trees.json ({kb:.0f} KB)")
